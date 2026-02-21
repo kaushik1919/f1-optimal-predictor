@@ -3,6 +3,13 @@
 from f1_engine.core.car import Car
 from f1_engine.core.driver import Driver
 from f1_engine.core.energy import EnergyState
+from f1_engine.core.kalman_update import (
+    KalmanPerformanceState,
+    apply_kalman_state_to_team,
+    compute_measurement_gradient,
+    initialize_kalman_state,
+    kalman_update,
+)
 from f1_engine.core.monte_carlo import simulate_race_monte_carlo
 from f1_engine.core.physics import lap_time
 from f1_engine.core.race import PIT_LOSS, RaceResult, simulate_race
@@ -32,6 +39,7 @@ __all__ = [
     "Driver",
     "EnergyState",
     "HARD",
+    "KalmanPerformanceState",
     "MEDIUM",
     "PIT_LOSS",
     "PerformanceState",
@@ -42,12 +50,16 @@ __all__ = [
     "Track",
     "TyreCompound",
     "TyreState",
+    "apply_kalman_state_to_team",
     "apply_updated_state",
     "compute_championship_entropy",
     "compute_ers_sensitivity",
+    "compute_measurement_gradient",
     "compute_reliability_sensitivity",
     "find_best_constant_deploy",
     "find_best_pit_strategy",
+    "initialize_kalman_state",
+    "kalman_update",
     "lap_time",
     "simulate_race",
     "simulate_race_monte_carlo",

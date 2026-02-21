@@ -51,6 +51,7 @@ f1_engine/
         sensitivity.py   -- Sensitivity and volatility analysis engine (Phase 7).
         driver.py        -- Driver frozen dataclass (Phase 10).
         team.py          -- Team model pairing a Car with two Drivers (Phase 10).
+        kalman_update.py -- Formal Kalman filter performance updater (Phase 11C).
 
     data_ingestion/
         __init__.py      -- Data ingestion package.
@@ -71,6 +72,7 @@ tests/
     test_calendar.py     -- Calendar loading and track validation tests (Phase 9).
     test_team_driver.py  -- Driver and team modelling tests (Phase 10).
     test_pit_strategy.py -- Tyre compound and pit stop tests (Phase 11B).
+    test_kalman.py       -- Kalman filter performance updating tests (Phase 11C).
 
 scripts/
     calibrate_from_testing.py -- CLI script to calibrate from real sessions (Phase 8).
@@ -536,6 +538,57 @@ Each candidate is evaluated deterministically using the physics model with compo
 ### Impact on Championship Variance
 
 Compound choice and pit timing introduce a new axis of strategic variation.  Two identically fast cars can diverge significantly depending on whether they choose an aggressive soft-medium 1-stop versus a conservative medium-hard-medium 2-stop.  In Monte Carlo season simulations this amplifies result spread at high-degradation circuits while leaving low-degradation venues relatively unaffected.
+
+---
+
+## Phase 11C -- Formal Kalman Performance Updating
+
+Phase 11C replaces the heuristic exponential-smoothing updater with a formal Extended Kalman Filter (EKF) that maintains a joint state vector and covariance matrix over three latent car parameters.
+
+### State Vector
+
+The Kalman state is a 3-element vector:
+
+| Index | Parameter         | Initial P (variance) |
+|------:|-------------------|---------------------:|
+| 0     | ``base_speed``    | 0.10                 |
+| 1     | ``ers_efficiency`` | 0.05                 |
+| 2     | ``reliability``    | 0.01                 |
+
+``initialize_kalman_state(car)`` extracts the three parameters from a ``Car`` and creates a diagonal covariance matrix with the above variances.
+
+### Measurement Model
+
+The measurement is a scalar: *observed championship points for a driver*.  The measurement gradient (Jacobian) H is a (1, 3) row vector computed via central finite differences on the ``expected_driver_points`` output of ``simulate_season_monte_carlo``.  Each partial derivative is estimated as:
+
+$$
+H_j = \frac{f(\theta + \delta e_j) - f(\theta - \delta e_j)}{2\delta}
+$$
+
+where f returns expected points and $\delta$ defaults to 1e-3.
+
+### Kalman Update Step
+
+Given innovation $y = z_{\text{observed}} - z_{\text{expected}}$, the standard EKF equations are applied:
+
+$$
+S = H P H^T + R, \quad K = P H^T S^{-1}
+$$
+$$
+\theta_{\text{new}} = \theta + K y, \quad P_{\text{new}} = (I - K H) P
+$$
+
+where R is a scalar measurement variance (default 10.0).  After the update, ``ers_efficiency`` and ``reliability`` are clamped to [0, 1] to maintain physical validity.  A degenerate-S guard prevents division-by-zero in edge cases.
+
+### Why EKF?
+
+Compared to the heuristic updater in Phase 6:
+
+- **Principled uncertainty tracking** -- the covariance matrix shrinks with each observation, giving a calibrated confidence measure.
+- **Multi-parameter coupling** -- a single points observation updates all three parameters proportionally to their gradient contributions.
+- **Automatic gain scheduling** -- the Kalman gain naturally decreases as confidence grows, preventing late-season over-correction.
+
+``apply_kalman_state_to_team`` converts the updated state vector back into a new ``Team`` with a fresh ``Car``, ready for the next simulation cycle.
 
 ---
 
