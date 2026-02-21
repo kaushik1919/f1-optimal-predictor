@@ -46,6 +46,7 @@ f1_engine/
         stint.py         -- Stint simulation and strategy search (Phase 2).
         race.py          -- Multi-car stochastic race simulator (Phase 3).
         monte_carlo.py   -- Monte Carlo race analytics engine (Phase 4).
+        season.py        -- Full-season Monte Carlo championship simulator (Phase 5).
 
 data/
     calendar_2026.yaml   -- 2026 season race calendar.
@@ -55,6 +56,7 @@ tests/
     test_stint.py        -- Energy, tyre, stint, and strategy tests (Phase 2).
     test_race.py         -- Race simulator tests (Phase 3).
     test_monte_carlo.py  -- Monte Carlo analytics tests (Phase 4).
+    test_season.py       -- Season championship simulator tests (Phase 5).
 
 main.py                  -- CLI entrypoint.
 ```
@@ -193,6 +195,47 @@ All probabilities are empirical frequencies.  Increasing `simulations` improves 
 ### Seed Handling
 
 The `base_seed` parameter controls reproducibility at the ensemble level.  Individual race randomness (Gaussian noise, reliability hazard, overtake draws) is governed by `numpy.random.default_rng(seed)` inside each `simulate_race` call, inheriting the Phase 3 seeding contract.
+
+---
+
+## Phase 5 Scope
+
+Phase 5 adds a full-season Monte Carlo championship simulator that aggregates race-level results across every round of the calendar into season-long championship probability distributions.
+
+### Season Monte Carlo Methodology
+
+`simulate_season_monte_carlo(calendar, cars, laps_per_race, seasons, base_seed)` simulates `seasons` complete championships.  For each simulated season, every race on the calendar is run using the Phase 3 race simulator.  Points are accumulated across all rounds using the standard F1 table `[25, 18, 15, 12, 10, 8, 6, 4, 2, 1]`.
+
+After all seasons complete, the following statistics are computed per team:
+
+- **WDC probability** -- fraction of simulated seasons in which the team accumulated the most points.
+- **Expected season points** -- arithmetic mean of total championship points.
+- **Expected final position** -- arithmetic mean of final standings position.
+- **Standings distribution** -- for each possible final position, the probability of finishing there.
+
+### Seed Strategy
+
+Each individual race within a season is seeded deterministically:
+
+```
+season_seed = base_seed + season_index
+race_seed   = season_seed + race_index * 1000
+```
+
+This two-level scheme ensures:
+
+- Full reproducibility given the same `base_seed` and `seasons` count.
+- Statistical independence between races within a season.
+- Statistical independence between simulated seasons.
+- No global random state is modified.
+
+### Computational Complexity
+
+Total race simulations executed: `seasons * len(calendar)`.  For a 24-race calendar with 1000 seasons, the engine runs 24000 individual race simulations.  Each race inherits the O(laps * cars) cost from Phase 3.
+
+### Championship Resolution
+
+WDC probabilities across all teams sum to exactly 1.0.  Ties in season points are broken by the order returned from NumPy's argsort (lowest index first), consistent across runs due to seeded randomness.
 
 ---
 
