@@ -12,7 +12,14 @@ from f1_engine.core.kalman_update import (
 )
 from f1_engine.core.monte_carlo import simulate_race_monte_carlo
 from f1_engine.core.physics import lap_time
-from f1_engine.core.race import PIT_LOSS, RaceResult, simulate_race
+from f1_engine.core.race import (
+    PIT_LOSS,
+    SC_GAP_INTERVAL,
+    SC_LAP_TIME_FACTOR,
+    SC_PIT_MULTIPLIER,
+    RaceResult,
+    simulate_race,
+)
 from f1_engine.core.season import simulate_season_monte_carlo
 from f1_engine.core.sensitivity import (
     compute_championship_entropy,
@@ -44,6 +51,9 @@ __all__ = [
     "PIT_LOSS",
     "PerformanceState",
     "RaceResult",
+    "SC_GAP_INTERVAL",
+    "SC_LAP_TIME_FACTOR",
+    "SC_PIT_MULTIPLIER",
     "SOFT",
     "Strategy",
     "Team",

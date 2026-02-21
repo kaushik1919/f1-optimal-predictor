@@ -15,6 +15,10 @@ class Track:
         tyre_degradation_factor: Circuit-specific tyre wear multiplier (>= 0.0).
         downforce_sensitivity: How much downforce affects lap time
             at this circuit (>= 0.0).
+        safety_car_lambda: Per-lap probability of a safety car deployment
+            when racing under green conditions (0.0-1.0).
+        safety_car_resume_lambda: Per-lap probability of returning to green
+            flag racing while under a safety car (0.0-1.0).
     """
 
     name: str
@@ -23,6 +27,8 @@ class Track:
     energy_harvest_factor: float
     tyre_degradation_factor: float
     downforce_sensitivity: float
+    safety_car_lambda: float = 0.0
+    safety_car_resume_lambda: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate track parameters."""
@@ -38,3 +44,7 @@ class Track:
             raise ValueError("tyre_degradation_factor must be >= 0.0.")
         if self.downforce_sensitivity < 0.0:
             raise ValueError("downforce_sensitivity must be >= 0.0.")
+        if not 0.0 <= self.safety_car_lambda <= 1.0:
+            raise ValueError("safety_car_lambda must be between 0.0 and 1.0.")
+        if not 0.0 <= self.safety_car_resume_lambda <= 1.0:
+            raise ValueError("safety_car_resume_lambda must be between 0.0 and 1.0.")

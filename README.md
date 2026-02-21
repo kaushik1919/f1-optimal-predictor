@@ -73,6 +73,7 @@ tests/
     test_team_driver.py  -- Driver and team modelling tests (Phase 10).
     test_pit_strategy.py -- Tyre compound and pit stop tests (Phase 11B).
     test_kalman.py       -- Kalman filter performance updating tests (Phase 11C).
+    test_safety_car.py   -- Safety Car Markov modelling tests (Phase 12).
 
 scripts/
     calibrate_from_testing.py -- CLI script to calibrate from real sessions (Phase 8).
@@ -589,6 +590,73 @@ Compared to the heuristic updater in Phase 6:
 - **Automatic gain scheduling** -- the Kalman gain naturally decreases as confidence grows, preventing late-season over-correction.
 
 ``apply_kalman_state_to_team`` converts the updated state vector back into a new ``Team`` with a fresh ``Car``, ready for the next simulation cycle.
+
+---
+
+## Phase 12 -- Safety Car Markov Modelling
+
+Phase 12 introduces a stochastic Safety Car (SC) model driven by a two-state Markov chain evaluated at every lap.
+
+### State Machine
+
+| State | Meaning          | Transition                                         |
+|------:|------------------|----------------------------------------------------||
+| 0     | Green flag       | Moves to 1 with probability ``safety_car_lambda``  |
+| 1     | Safety Car       | Returns to 0 with probability ``safety_car_resume_lambda`` |
+
+Both probabilities are per-track attributes validated to ``[0, 1]``.  A track with ``safety_car_lambda = 0`` will never see a safety car; a track with ``safety_car_lambda = 0.10`` has roughly a 10 % chance each lap.
+
+### Transition Probabilities
+
+The Markov chain is memoryless: the probability of entering or leaving the SC state depends only on the current state, not on how long the race has been in that state.  This is a deliberate simplification -- real safety car durations follow a geometric distribution whose parameter is ``safety_car_resume_lambda``.
+
+Expected number of SC laps per deployment:
+
+$$
+E[\text{SC laps}] = \frac{1}{\text{safety\_car\_resume\_lambda}}
+$$
+
+Expected number of green laps between deployments:
+
+$$
+E[\text{green laps}] = \frac{1}{\text{safety\_car\_lambda}}
+$$
+
+### Gap Compression
+
+While the SC is deployed, after all cars have completed the lap:
+
+1. Cars are sorted by cumulative time (running order).
+2. The leader's cumulative time is preserved.
+3. Each subsequent car is placed ``SC_GAP_INTERVAL = 0.2`` seconds behind the car ahead.
+
+This models the real-world effect of the safety car bunching the field together, erasing large time gaps.
+
+### Lap Time Override
+
+Under the SC, every active car records a fixed lap time of ``1.4 x baseline_lap_time`` regardless of car performance, tyre compound, or driver skill.  The baseline is computed from a reference car at race initialisation.  There is no Gaussian noise under the SC.
+
+### Pit Stop Discount
+
+Pitting under the SC costs only 60 % of the normal pit-stop time loss:
+
+$$
+\text{effective\_pit\_loss} = \text{PIT\_LOSS} \times 0.6 = 12.0 \text{ s}
+$$
+
+This reflects the reduced time lost when the pit lane delta is smaller relative to the slow SC-pace field, a well-known strategic advantage in real F1.
+
+### Overtake Suppression
+
+Overtakes are completely disabled under the SC.  The logistic overtake model is skipped; position changes can only occur through pit-stop undercuts or overcuts after the SC period ends.
+
+### Strategic Impact
+
+The SC model introduces a major source of championship variance:
+
+- Teams on older tyres benefit from pitting under the SC (cheap stop).
+- Gap compression rewards cars that were far behind and punishes leaders who had built a large advantage.
+- Monte Carlo season simulations now capture the randomness of SC timing, which historically accounts for a significant share of race-to-race result variance.
 
 ---
 

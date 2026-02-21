@@ -18,6 +18,14 @@ driver follows a pit schedule that dictates when to stop and which
 compound to fit.  A ``PIT_LOSS`` of 20.0 seconds is added to cumulative
 time on every pit lap.  Lap times incorporate the compound's pace delta
 and degradation rate.
+
+Phase 12 introduces a Safety Car Markov state machine.  Each lap the race
+is either *green* (state 0) or *under safety car* (state 1).  Transition
+probabilities are per-track (``safety_car_lambda`` and
+``safety_car_resume_lambda``).  Under a safety car, all active cars receive
+a fixed slow lap time (1.4 x track baseline), overtakes are disabled,
+gaps are compressed behind the leader, and pit-stop loss is reduced to
+60 % of normal.
 """
 
 from __future__ import annotations
@@ -43,6 +51,9 @@ from f1_engine.core.tyre import MEDIUM, TyreCompound, TyreState
 # ---------------------------------------------------------------------------
 
 PIT_LOSS: float = 20.0  # seconds added to cumulative time on every pit stop
+SC_PIT_MULTIPLIER: float = 0.6  # pit loss reduction factor under safety car
+SC_LAP_TIME_FACTOR: float = 1.4  # lap time multiplier under safety car
+SC_GAP_INTERVAL: float = 0.2  # seconds between cars during SC compression
 
 # ---------------------------------------------------------------------------
 # Result container
@@ -58,11 +69,15 @@ class RaceResult:
             sorted by cumulative time; DNFs are appended at the end.
         dnf_list: Driver names of entries that did not finish.
         lap_times: Mapping from driver name to the list of per-lap times.
+        cumulative_times: Mapping from driver name to final cumulative race
+            time.  Includes gap compression and pit-stop adjustments that
+            are *not* reflected in the per-lap ``lap_times`` list.
     """
 
     final_classification: list[str] = field(default_factory=list)
     dnf_list: list[str] = field(default_factory=list)
     lap_times: dict[str, list[float]] = field(default_factory=dict)
+    cumulative_times: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -201,8 +216,32 @@ def simulate_race(
                 )
             )
 
+    # -- Compute track baseline lap time for safety car slowdown ---------------
+    #    Use a "reference car" with zeroed extras to get pure track baseline.
+    _ref_car = Car(
+        team_name="__ref__",
+        base_speed=80.0,
+        ers_efficiency=0.5,
+        aero_efficiency=0.85,
+        tyre_wear_rate=1.0,
+        reliability=1.0,
+    )
+    _baseline_lap: float = compute_lap_time(track, _ref_car, 0.0, 0.5)
+    _sc_lap_time: float = _baseline_lap * SC_LAP_TIME_FACTOR
+
+    # -- Safety car state (Phase 12 Markov model) ----------------------------
+    safety_car_state: int = 0  # 0 = green, 1 = safety car
+
     # -- Lap loop -------------------------------------------------------------
     for lap_number in range(1, laps + 1):
+        # -- Safety car state transition (Phase 12) ---------------------------
+        if safety_car_state == 0:
+            if rng.random() < track.safety_car_lambda:
+                safety_car_state = 1
+        else:
+            if rng.random() < track.safety_car_resume_lambda:
+                safety_car_state = 0
+
         for ds in states:
             if not ds.active:
                 continue
@@ -214,26 +253,31 @@ def simulate_race(
             # 2. Deploy
             actual_deploy: float = ds.energy.deploy(ds.deploy_level)
 
-            # 3. Deterministic lap time + driver skill offset + compound delta
-            #    The physics model already applies base tyre degradation;
-            #    we additionally scale by the compound degradation rate.
-            compound: TyreCompound = ds.tyre.compound
-            base_tyre_component: float = (
-                float(ds.tyre.age)
-                * track.tyre_degradation_factor
-                * ds.car.tyre_wear_rate
-            )
-            # Compute lap time with tyre_age = 0 so we can add the
-            # compound-scaled degradation ourselves.
-            t: float = compute_lap_time(track, ds.car, 0.0, actual_deploy)
-            t += base_tyre_component * compound.degradation_rate
-            t += compound.base_pace_delta
-            t += ds.driver.skill_offset
+            if safety_car_state == 1:
+                # Under safety car: all cars run at the fixed SC pace.
+                t = _sc_lap_time
+            else:
+                # 3. Deterministic lap time + driver skill offset + compound
+                #    delta.  The physics model already applies base tyre
+                #    degradation; we additionally scale by the compound
+                #    degradation rate.
+                compound: TyreCompound = ds.tyre.compound
+                base_tyre_component: float = (
+                    float(ds.tyre.age)
+                    * track.tyre_degradation_factor
+                    * ds.car.tyre_wear_rate
+                )
+                # Compute lap time with tyre_age = 0 so we can add the
+                # compound-scaled degradation ourselves.
+                t = compute_lap_time(track, ds.car, 0.0, actual_deploy)
+                t += base_tyre_component * compound.degradation_rate
+                t += compound.base_pace_delta
+                t += ds.driver.skill_offset
 
-            # 4. Gaussian noise scaled by driver consistency
-            if noise_std > 0.0:
-                effective_std: float = noise_std * ds.driver.consistency
-                t += float(rng.normal(0.0, effective_std))
+                # 4. Gaussian noise scaled by driver consistency
+                if noise_std > 0.0:
+                    effective_std: float = noise_std * ds.driver.consistency
+                    t += float(rng.normal(0.0, effective_std))
 
             ds.last_lap_time = t
             ds.cumulative_time += t
@@ -247,9 +291,12 @@ def simulate_race(
             # 6. Tyre age
             ds.tyre.increment_age()
 
-            # 7. Pit stop check (Phase 11B)
+            # 7. Pit stop check (Phase 11B / Phase 12 SC discount)
             if lap_number in ds.pit_laps:
-                ds.cumulative_time += PIT_LOSS
+                effective_pit: float = (
+                    PIT_LOSS * SC_PIT_MULTIPLIER if safety_car_state == 1 else PIT_LOSS
+                )
+                ds.cumulative_time += effective_pit
                 ds.stint_index += 1
                 next_compound: TyreCompound | None = None
                 if ds.stint_index < len(ds.compound_sequence):
@@ -260,8 +307,16 @@ def simulate_race(
         active_states = [s for s in states if s.active]
         active_states.sort(key=lambda s: s.cumulative_time)
 
+        # -- Safety car gap compression (Phase 12) ----------------------------
+        if safety_car_state == 1 and active_states:
+            leader_time: float = active_states[0].cumulative_time
+            for idx, ds in enumerate(active_states):
+                ds.cumulative_time = leader_time + SC_GAP_INTERVAL * idx
+
         # -- Overtake model (adjacent pairs) ----------------------------------
-        _apply_overtakes(active_states, track, rng)
+        #    Disabled under the safety car.
+        if safety_car_state == 0:
+            _apply_overtakes(active_states, track, rng)
 
     # -- Build result ---------------------------------------------------------
     active_sorted = sorted(
@@ -274,11 +329,13 @@ def simulate_race(
     ]
     dnf_names: list[str] = [s.driver.name for s in dnf_sorted]
     lap_time_map: dict[str, list[float]] = {s.driver.name: s.lap_times for s in states}
+    cum_time_map: dict[str, float] = {s.driver.name: s.cumulative_time for s in states}
 
     return RaceResult(
         final_classification=classification,
         dnf_list=dnf_names,
         lap_times=lap_time_map,
+        cumulative_times=cum_time_map,
     )
 
 
