@@ -58,6 +58,9 @@ f1_engine/
         __init__.py      -- Data ingestion package.
         fastf1_loader.py -- FastF1 session loader and parameter calibration (Phase 8).
 
+dashboard/
+    app.py               -- Streamlit + Plotly interactive analytics dashboard (Phase 14).
+
 data/
     calendar_2026.yaml   -- 2026 season race calendar (full per-track parameterisation).
 
@@ -726,6 +729,62 @@ A plain dictionary maps each state to its ``(cost_to_go, action)`` pair.  The en
 ### Relationship to Safety Car
 
 The DP optimiser operates under green-flag assumptions.  Safety Car effects (gap compression, pit discount) are handled separately in the race engine at simulation time.  A future extension could integrate SC transition probabilities into the DP cost model via expected-value weighting.
+
+---
+
+## Phase 14 -- Interactive Analytics Dashboard
+
+Phase 14 adds a Streamlit + Plotly interactive dashboard that exposes every simulation capability of the engine through a browser-based UI.
+
+### Dependencies
+
+- ``streamlit >= 1.30.0``
+- ``plotly >= 5.0.0``
+
+### Dashboard Layout
+
+**Sidebar Controls**
+
+| Control                  | Type     | Default |
+|--------------------------|----------|---------|
+| Monte Carlo seasons      | Slider   | 500     |
+| Safety Car enabled       | Toggle   | On      |
+| Measurement variance (R) | Slider   | 10.0    |
+| Driver for sensitivity   | Dropdown | First   |
+
+**Main Panel Sections**
+
+1. **Run Season Simulation** -- single button triggers full Monte Carlo run with ``st.spinner()`` feedback.
+2. **Championship Probabilities** -- side-by-side horizontal bar charts (Plotly) for WDC and WCC title probabilities.
+3. **Championship Entropy** -- Shannon entropy (bits), maximum entropy, and a competitiveness ratio metric.
+4. **Sensitivity Analysis** -- ERS efficiency elasticity and reliability elasticity for the selected driver, computed via ``compute_ers_sensitivity`` and ``compute_reliability_sensitivity``.
+5. **Safety Car & Pit Strategy** -- expected Safety Car laps per track (bar chart) and optimal DP pit strategy summary for each team on the first calendar race.
+
+### Data Flow
+
+```
+Sidebar Parameters
+       |
+       v
+_build_teams / _build_calendar        (construct domain objects)
+       |
+       v
+simulate_season_monte_carlo            (core engine, unchanged)
+       |
+       v
+compute_championship_entropy           (Section 3)
+compute_ers_sensitivity                (Section 4)
+compute_reliability_sensitivity        (Section 4)
+compute_optimal_strategy_dp            (Section 5)
+```
+
+The dashboard imports from the public ``f1_engine.core`` API.  No core engine code is modified.
+
+### Launch
+
+```bash
+streamlit run dashboard/app.py
+```
 
 ---
 
