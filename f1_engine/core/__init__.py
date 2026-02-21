@@ -2,6 +2,7 @@
 
 from f1_engine.core.car import Car
 from f1_engine.core.energy import EnergyState
+from f1_engine.core.monte_carlo import simulate_race_monte_carlo
 from f1_engine.core.physics import lap_time
 from f1_engine.core.race import RaceResult, simulate_race
 from f1_engine.core.stint import find_best_constant_deploy, simulate_stint
@@ -19,5 +20,6 @@ __all__ = [
     "find_best_constant_deploy",
     "lap_time",
     "simulate_race",
+    "simulate_race_monte_carlo",
     "simulate_stint",
 ]

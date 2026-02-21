@@ -45,6 +45,7 @@ f1_engine/
         strategy.py      -- Constant strategy dataclass (Phase 2).
         stint.py         -- Stint simulation and strategy search (Phase 2).
         race.py          -- Multi-car stochastic race simulator (Phase 3).
+        monte_carlo.py   -- Monte Carlo race analytics engine (Phase 4).
 
 data/
     calendar_2026.yaml   -- 2026 season race calendar.
@@ -53,6 +54,7 @@ tests/
     test_physics.py      -- Core physics test suite.
     test_stint.py        -- Energy, tyre, stint, and strategy tests (Phase 2).
     test_race.py         -- Race simulator tests (Phase 3).
+    test_monte_carlo.py  -- Monte Carlo analytics tests (Phase 4).
 
 main.py                  -- CLI entrypoint.
 ```
@@ -161,6 +163,36 @@ This means a trailing car that posted a faster lap than the leader is more likel
 - `final_classification` -- all team names ordered by finishing position (DNFs appended).
 - `dnf_list` -- team names that retired.
 - `lap_times` -- per-car list of recorded lap times.
+
+---
+
+## Phase 4 Scope
+
+Phase 4 adds a Monte Carlo analytics engine that runs many seeded replications of the Phase 3 race simulator and aggregates results into probability distributions.
+
+### Monte Carlo Methodology
+
+`simulate_race_monte_carlo(track, cars, laps, simulations, base_seed)` executes `simulations` independent race replications.  Replication *i* uses `seed = base_seed + i`, ensuring:
+
+- Full reproducibility when the same `base_seed` and `simulations` count are provided.
+- No global random state is modified.
+- Each replication is statistically independent.
+
+After all replications complete, the following statistics are computed per team:
+
+- **Winner probability** -- fraction of simulations in which the team finished first.
+- **Podium probability** -- fraction of simulations in which the team finished in the top 3.
+- **Expected finishing position** -- arithmetic mean of finishing positions.
+- **Expected championship points** -- arithmetic mean of points awarded per the standard F1 table `[25, 18, 15, 12, 10, 8, 6, 4, 2, 1]`.
+- **Finish distribution** -- for each possible finishing position, the probability of ending up there.
+
+### Statistical Interpretation
+
+All probabilities are empirical frequencies.  Increasing `simulations` improves the precision of every estimate.  Winner probabilities across all teams sum to exactly 1.0.  Each team's finish distribution also sums to 1.0.
+
+### Seed Handling
+
+The `base_seed` parameter controls reproducibility at the ensemble level.  Individual race randomness (Gaussian noise, reliability hazard, overtake draws) is governed by `numpy.random.default_rng(seed)` inside each `simulate_race` call, inheriting the Phase 3 seeding contract.
 
 ---
 
