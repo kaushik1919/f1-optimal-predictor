@@ -8,6 +8,10 @@ when a seed is supplied and noise_std is held constant.
 Phase 10 extends the simulator to operate at the *driver* level.  Each
 team fields two drivers who share the same car but have individual skill
 offsets and consistency multipliers.
+
+Phase 11A makes overtakes persistent by applying a cumulative-time
+adjustment (pass_time_delta = 0.2 s) on each successful pass, preventing
+position oscillation and ensuring time-consistent race order.
 """
 
 from __future__ import annotations
@@ -220,6 +224,9 @@ def simulate_race(
 # ---------------------------------------------------------------------------
 
 
+_PASS_TIME_DELTA: float = 0.2  # seconds transferred on a successful overtake
+
+
 def _apply_overtakes(
     ranked: list[_DriverState],
     track: Track,
@@ -231,7 +238,15 @@ def _apply_overtakes(
         - If the cumulative time gap is < 1.0 s, compute a logistic pass
           probability based on the lap-time delta and the track's overtake
           coefficient.
-        - If the random draw succeeds, swap positions in *ranked*.
+        - If the random draw succeeds, the overtake is made *persistent* by
+          adjusting cumulative times:
+
+            trailer.cumulative_time = leader.cumulative_time - pass_time_delta
+            leader.cumulative_time += pass_time_delta
+
+          Cumulative times are clamped to a minimum of 0.0.
+        - The two entries are swapped in *ranked* and the next comparison is
+          skipped to prevent immediate re-swap oscillation.
 
     The logistic function used is::
 
@@ -251,8 +266,14 @@ def _apply_overtakes(
             pass_prob: float = 1.0 / (1.0 + math.exp(exponent))
 
             if rng.random() < pass_prob:
+                # Persistent time adjustment: place the overtaker ahead.
+                trailer.cumulative_time = max(
+                    0.0, leader.cumulative_time - _PASS_TIME_DELTA
+                )
+                leader.cumulative_time += _PASS_TIME_DELTA
+
                 ranked[i], ranked[i + 1] = ranked[i + 1], ranked[i]
-                # Skip next pair to avoid double-swapping the same car.
+                # Skip next pair to avoid immediate re-swap oscillation.
                 i += 2
                 continue
         i += 1

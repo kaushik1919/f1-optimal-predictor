@@ -478,6 +478,31 @@ With a single entity per team the championship is entirely determined by car per
 
 ---
 
+## Phase 11A -- Persistent Overtake Modelling
+
+Prior to Phase 11A, a successful overtake only swapped positions in the ranking list without altering cumulative race times.  This meant the overtaken driver could immediately re-pass on the very next comparison, producing unrealistic back-and-forth oscillation and failing to reflect the physical reality of an on-track pass.
+
+### Why Time Continuity Matters
+
+In a real race, when one car overtakes another it physically occupies the space ahead.  Simply swapping list indices does not encode this: both drivers retain their original cumulative times, so the next sort can reverse the move.  By adjusting cumulative times at the moment of the pass, the overtake becomes *persistent* -- the new leader has a genuine time advantage and the passed driver must drive faster across subsequent laps to recover the gap.
+
+### Pass Delta Parameter
+
+A module-level constant ``_PASS_TIME_DELTA = 0.2`` seconds governs the time transfer on each successful pass:
+
+```
+trailer.cumulative_time = leader.cumulative_time - pass_time_delta
+leader.cumulative_time += pass_time_delta
+```
+
+Cumulative times are clamped so they never become negative.  After the adjustment the two entries are swapped in the ranking list and the next adjacent comparison is skipped, preventing immediate re-swap oscillation within the same lap evaluation.
+
+### Impact on Championship Variance
+
+Persistent overtakes increase the influence of race-day events on final standings.  A driver who executes several overtakes accumulates a meaningful time buffer, making position gains "stick" through to the chequered flag.  Across a full season of Monte Carlo simulations, this produces wider championship probability distributions -- especially among closely matched midfield teams -- because single-race position swings compound over multiple rounds.
+
+---
+
 ## How to Run Locally
 
 ### Prerequisites
@@ -583,4 +608,4 @@ Internet access is required on the first run to download session data.  Subseque
 
 ## License
 
-This project is provided as-is for research and simulation purposes.
+This project is licensed under the MIT License.  See [LICENSE](LICENSE) for details.
