@@ -12,6 +12,7 @@ from f1_engine.core.kalman_update import (
 )
 from f1_engine.core.monte_carlo import simulate_race_monte_carlo
 from f1_engine.core.physics import lap_time
+from f1_engine.core.pit_dp import compute_optimal_strategy_dp
 from f1_engine.core.race import (
     PIT_LOSS,
     SC_GAP_INTERVAL,
@@ -63,6 +64,7 @@ __all__ = [
     "apply_kalman_state_to_team",
     "apply_updated_state",
     "compute_championship_entropy",
+    "compute_optimal_strategy_dp",
     "compute_ers_sensitivity",
     "compute_measurement_gradient",
     "compute_reliability_sensitivity",

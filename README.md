@@ -52,6 +52,7 @@ f1_engine/
         driver.py        -- Driver frozen dataclass (Phase 10).
         team.py          -- Team model pairing a Car with two Drivers (Phase 10).
         kalman_update.py -- Formal Kalman filter performance updater (Phase 11C).
+        pit_dp.py        -- Finite-horizon DP pit-stop optimiser (Phase 13).
 
     data_ingestion/
         __init__.py      -- Data ingestion package.
@@ -74,6 +75,7 @@ tests/
     test_pit_strategy.py -- Tyre compound and pit stop tests (Phase 11B).
     test_kalman.py       -- Kalman filter performance updating tests (Phase 11C).
     test_safety_car.py   -- Safety Car Markov modelling tests (Phase 12).
+    test_pit_dp.py       -- DP pit-stop optimiser tests (Phase 13).
 
 scripts/
     calibrate_from_testing.py -- CLI script to calibrate from real sessions (Phase 8).
@@ -657,6 +659,73 @@ The SC model introduces a major source of championship variance:
 - Teams on older tyres benefit from pitting under the SC (cheap stop).
 - Gap compression rewards cars that were far behind and punishes leaders who had built a large advantage.
 - Monte Carlo season simulations now capture the randomness of SC timing, which historically accounts for a significant share of race-to-race result variance.
+
+---
+
+## Phase 13 -- Finite-Horizon Dynamic Programming Pit Optimisation
+
+Phase 13 replaces the grid-search pit-stop optimiser (``find_best_pit_strategy`` in ``stint.py``) with a finite-horizon dynamic programming solver that finds the globally optimal pit-stop schedule for a given car and track.
+
+### State Space
+
+The DP state is a triple:
+
+| Element         | Range                          |
+|-----------------|--------------------------------|
+| ``lap``         | 0 .. ``total_laps``            |
+| ``tyre_age``    | 0 .. ``total_laps``            |
+| ``compound``    | SOFT, MEDIUM, HARD             |
+
+Energy state and Safety Car effects are excluded to keep the state space tractable.  Total states are bounded by ``total_laps^2 * 3``, which is under 30 000 for a 100-lap race.
+
+### Bellman Equation
+
+At each state $(l, a, c)$ the solver evaluates two actions:
+
+**Continue** (drive this lap on current tyres):
+
+$$
+V(l, a, c) = \text{lap\_cost}(a, c) + V(l+1, a+1, c)
+$$
+
+**Pit to compound** $c'$:
+
+$$
+V_{\text{pit}}(l, c') = \text{PIT\_LOSS} + \text{lap\_cost}(0, c') + V(l+1, 1, c')
+$$
+
+The optimal value is:
+
+$$
+V^*(l, a, c) = \min\bigl(V_{\text{continue}},\; \min_{c'} V_{\text{pit}}(l, c')\bigr)
+$$
+
+Base case: $V(\text{total\_laps}, \cdot, \cdot) = 0$.
+
+### Lap Cost Model
+
+Each lap's cost mirrors the race-engine calculation with ``deploy_level = 0``:
+
+$$
+\text{lap\_cost}(a, c) = \text{base\_time} + a \cdot \text{deg\_factor} \cdot \text{wear\_rate} \cdot c.\text{degradation\_rate} + c.\text{base\_pace\_delta}
+$$
+
+### Policy Extraction
+
+After backward induction, a forward pass starting from $(0, 0, \text{starting\_compound})$ traces the optimal actions to produce:
+
+- ``pit_laps`` -- 1-based lap numbers where a stop occurs.
+- ``compound_sequence`` -- the ordered tuple of compounds across stints.
+
+Pitting is forbidden on the first and last laps to avoid degenerate edge cases.
+
+### Memoisation
+
+A plain dictionary maps each state to its ``(cost_to_go, action)`` pair.  The entire table is populated in a single backward sweep with no recursion, so there is no risk of stack overflow regardless of race length.
+
+### Relationship to Safety Car
+
+The DP optimiser operates under green-flag assumptions.  Safety Car effects (gap compression, pit discount) are handled separately in the race engine at simulation time.  A future extension could integrate SC transition probabilities into the DP cost model via expected-value weighting.
 
 ---
 
