@@ -47,6 +47,7 @@ f1_engine/
         race.py          -- Multi-car stochastic race simulator (Phase 3).
         monte_carlo.py   -- Monte Carlo race analytics engine (Phase 4).
         season.py        -- Full-season Monte Carlo championship simulator (Phase 5).
+        updating.py      -- Latent performance updating engine (Phase 6).
 
 data/
     calendar_2026.yaml   -- 2026 season race calendar.
@@ -57,6 +58,7 @@ tests/
     test_race.py         -- Race simulator tests (Phase 3).
     test_monte_carlo.py  -- Monte Carlo analytics tests (Phase 4).
     test_season.py       -- Season championship simulator tests (Phase 5).
+    test_updating.py     -- Performance updating engine tests (Phase 6).
 
 main.py                  -- CLI entrypoint.
 ```
@@ -236,6 +238,50 @@ Total race simulations executed: `seasons * len(calendar)`.  For a 24-race calen
 ### Championship Resolution
 
 WDC probabilities across all teams sum to exactly 1.0.  Ties in season points are broken by the order returned from NumPy's argsort (lowest index first), consistent across runs due to seeded randomness.
+
+---
+
+## Phase 6 Scope
+
+Phase 6 introduces a continuous updating engine that adjusts the latent car performance parameters after observed race results are compared against the model's prior expectations.  This closes the feedback loop between simulation and reality.
+
+### Latent vs Observed Performance
+
+The engine maintains a distinction between **latent** (true, hidden) performance and **observed** (noisy, race-day) outcomes.  The `PerformanceState` dataclass holds the engine's current belief about a car's underlying capability:
+
+- `base_speed` -- believed baseline lap time.
+- `ers_efficiency` -- believed ERS effectiveness.
+- `reliability` -- believed mechanical reliability.
+
+These are not directly measured; they are inferred from the gap between predicted and actual race points.
+
+### Simple Bayesian-Style Update
+
+`update_performance_state(prior, observed_points, expected_points, learning_rate)` computes a scalar error signal and applies proportional corrections:
+
+```
+error = observed_points - expected_points
+
+base_speed  -= learning_rate * error * 0.01
+ers_efficiency += learning_rate * error * 0.005
+reliability += learning_rate * error * 0.001
+```
+
+A positive error (the car scored more than predicted) causes:
+
+- `base_speed` to decrease (faster).
+- `ers_efficiency` to increase.
+- `reliability` to increase.
+
+A negative error reverses the direction.  Reliability is clamped to `[0.0, 1.0]` after every update.
+
+### Learning Rate Interpretation
+
+The `learning_rate` parameter (default `0.05`) controls how aggressively the model revises its beliefs.  A higher value responds quickly to new evidence but is more sensitive to noise.  A lower value smooths out volatility but reacts slowly to genuine performance shifts.  The three sensitivity coefficients (`0.01`, `0.005`, `0.001`) encode the relative responsiveness of each parameter to the same unit of error, ensuring that base speed adjusts most and reliability adjusts least.
+
+### Integration
+
+`apply_updated_state(car, state)` produces a new `Car` instance with the updated latent parameters while preserving non-performance attributes (`team_name`, `aero_efficiency`, `tyre_wear_rate`).  Because `Car` is a frozen dataclass, no mutation occurs.
 
 ---
 

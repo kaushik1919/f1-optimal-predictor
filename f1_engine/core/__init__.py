@@ -10,18 +10,26 @@ from f1_engine.core.stint import find_best_constant_deploy, simulate_stint
 from f1_engine.core.strategy import Strategy
 from f1_engine.core.track import Track
 from f1_engine.core.tyre import TyreState
+from f1_engine.core.updating import (
+    PerformanceState,
+    apply_updated_state,
+    update_performance_state,
+)
 
 __all__ = [
     "Car",
     "EnergyState",
+    "PerformanceState",
     "RaceResult",
     "Strategy",
     "Track",
     "TyreState",
+    "apply_updated_state",
     "find_best_constant_deploy",
     "lap_time",
     "simulate_race",
     "simulate_race_monte_carlo",
     "simulate_season_monte_carlo",
     "simulate_stint",
+    "update_performance_state",
 ]
