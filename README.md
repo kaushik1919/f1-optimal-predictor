@@ -70,6 +70,7 @@ tests/
     test_fastf1_loader.py -- Data ingestion and calibration tests (Phase 8).
     test_calendar.py     -- Calendar loading and track validation tests (Phase 9).
     test_team_driver.py  -- Driver and team modelling tests (Phase 10).
+    test_pit_strategy.py -- Tyre compound and pit stop tests (Phase 11B).
 
 scripts/
     calibrate_from_testing.py -- CLI script to calibrate from real sessions (Phase 8).
@@ -500,6 +501,41 @@ Cumulative times are clamped so they never become negative.  After the adjustmen
 ### Impact on Championship Variance
 
 Persistent overtakes increase the influence of race-day events on final standings.  A driver who executes several overtakes accumulates a meaningful time buffer, making position gains "stick" through to the chequered flag.  Across a full season of Monte Carlo simulations, this produces wider championship probability distributions -- especially among closely matched midfield teams -- because single-race position swings compound over multiple rounds.
+
+---
+
+## Phase 11B -- Tyre Compounds and Pit Strategy Modelling
+
+Phase 11B introduces tyre compound differentiation and a pit-stop strategy engine, replacing the single implicit tyre type with three distinct compounds and adding in-race pit stops.
+
+### Compound Model
+
+Each tyre compound is described by two parameters:
+
+| Compound | ``base_pace_delta`` | ``degradation_rate`` | Character |
+|----------|--------------------:|---------------------:|-----------|
+| SOFT     | -0.6 s              | 1.5x                 | Fastest raw pace, highest degradation. |
+| MEDIUM   | -0.3 s              | 1.0x (baseline)      | Balanced pace and durability.          |
+| HARD     |  0.0 s              | 0.7x                 | Slowest raw pace, lowest degradation.  |
+
+The ``base_pace_delta`` is an additive offset applied to every lap time (negative values make the car faster).  The ``degradation_rate`` scales the tyre-age degradation component computed by the physics model.  SOFT tyres lose performance roughly twice as fast as HARD tyres over a stint, creating a clear pace-versus-durability trade-off.
+
+### Pit Stop Time Loss
+
+A constant ``PIT_LOSS = 20.0`` seconds is added to a driver's cumulative time on every pit lap.  During the stop the tyre age is reset to zero and the next compound in the strategy's compound sequence is fitted.  The pit loss is deliberately large relative to a single lap's degradation penalty, ensuring that pit stops are only worthwhile when the accumulated tyre degradation saved over remaining laps exceeds the time spent in the pit lane.
+
+### Strategy Search
+
+``find_best_pit_strategy`` in ``stint.py`` evaluates a limited grid of candidate strategies:
+
+- **1-stop**: Pit window centred on ``total_laps // 2`` with a +/- 5-lap sweep; all nine combinations of SOFT/MEDIUM/HARD across two stints.
+- **2-stop**: Pit windows at ``total_laps // 3`` and ``2 * total_laps // 3`` with the same sweep; all 27 compound permutations across three stints.
+
+Each candidate is evaluated deterministically using the physics model with compound-scaled degradation.  The fastest total-time candidate (including pit losses) is returned as a ``Strategy`` instance that can be passed directly to ``simulate_race`` via the ``strategies`` parameter.
+
+### Impact on Championship Variance
+
+Compound choice and pit timing introduce a new axis of strategic variation.  Two identically fast cars can diverge significantly depending on whether they choose an aggressive soft-medium 1-stop versus a conservative medium-hard-medium 2-stop.  In Monte Carlo season simulations this amplifies result spread at high-degradation circuits while leaving low-degradation venues relatively unaffected.
 
 ---
 
