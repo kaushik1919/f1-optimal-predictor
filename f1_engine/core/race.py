@@ -4,6 +4,10 @@ This module introduces Gaussian lap-time noise, a reliability hazard model,
 and a logistic overtake probability model.  All randomness is seeded via
 a per-call ``numpy.random.Generator`` so that results are fully reproducible
 when a seed is supplied and noise_std is held constant.
+
+Phase 10 extends the simulator to operate at the *driver* level.  Each
+team fields two drivers who share the same car but have individual skill
+offsets and consistency multipliers.
 """
 
 from __future__ import annotations
@@ -15,9 +19,11 @@ import numpy as np
 from numpy.random import Generator
 
 from f1_engine.core.car import Car
+from f1_engine.core.driver import Driver
 from f1_engine.core.energy import EnergyState
 from f1_engine.core.physics import lap_time as compute_lap_time
 from f1_engine.core.stint import find_best_constant_deploy
+from f1_engine.core.team import Team
 from f1_engine.core.track import Track
 from f1_engine.core.tyre import TyreState
 
@@ -31,10 +37,10 @@ class RaceResult:
     """Outcome of a multi-car race simulation.
 
     Attributes:
-        final_classification: Ordered list of team names.  Finishers are
+        final_classification: Ordered list of driver names.  Finishers are
             sorted by cumulative time; DNFs are appended at the end.
-        dnf_list: Team names of cars that did not finish.
-        lap_times: Mapping from team name to the list of per-lap times.
+        dnf_list: Driver names of entries that did not finish.
+        lap_times: Mapping from driver name to the list of per-lap times.
     """
 
     final_classification: list[str] = field(default_factory=list)
@@ -43,14 +49,15 @@ class RaceResult:
 
 
 # ---------------------------------------------------------------------------
-# Internal per-car state
+# Internal per-driver state
 # ---------------------------------------------------------------------------
 
 
-class _CarState:
-    """Mutable per-car bookkeeping during a race simulation."""
+class _DriverState:
+    """Mutable per-driver bookkeeping during a race simulation."""
 
     __slots__ = (
+        "driver",
         "car",
         "energy",
         "tyre",
@@ -62,7 +69,10 @@ class _CarState:
         "last_lap_time",
     )
 
-    def __init__(self, car: Car, deploy_level: float, harvest_level: float) -> None:
+    def __init__(
+        self, driver: Driver, car: Car, deploy_level: float, harvest_level: float
+    ) -> None:
+        self.driver: Driver = driver
         self.car: Car = car
         self.energy: EnergyState = EnergyState(max_charge=4.0)
         self.tyre: TyreState = TyreState(age=0, wear_rate_multiplier=car.tyre_wear_rate)
@@ -81,32 +91,36 @@ class _CarState:
 
 def simulate_race(
     track: Track,
-    cars: list[Car],
+    teams: list[Team],
     laps: int,
     noise_std: float = 0.05,
     seed: int | None = None,
 ) -> RaceResult:
-    """Simulate a multi-car race with stochastic elements.
+    """Simulate a multi-driver race with stochastic elements.
 
-    Each car is initialised with its own energy state, tyre state, and a
-    constant deploy strategy selected via ``find_best_constant_deploy``.
+    Each driver is initialised with its own energy state, tyre state, and
+    a constant deploy strategy selected via ``find_best_constant_deploy``
+    using the shared team car.
 
-    Per lap, for every active car:
+    Per lap, for every active driver:
         1. Energy is harvested (track factor * strategy harvest level).
         2. Energy is deployed (bounded by battery).
-        3. A deterministic lap time is computed.
-        4. Gaussian noise (``N(0, noise_std)``) is added.
-        5. A reliability hazard check may trigger a DNF.
+        3. A deterministic lap time is computed, then the driver's
+           ``skill_offset`` is added.
+        4. Gaussian noise ``N(0, noise_std * driver.consistency)`` is added.
+        5. A reliability hazard check (car-based) may trigger a DNF.
         6. Tyre age is advanced.
 
-    After all cars have been updated, active cars are sorted by cumulative
-    time.  Adjacent pairs are then evaluated for a logistic overtake swap.
+    After all drivers have been updated, active entries are sorted by
+    cumulative time.  Adjacent pairs are then evaluated for a logistic
+    overtake swap.
 
     Args:
         track: Circuit to race on.
-        cars: List of participating cars.
+        teams: List of participating teams (each with 2 drivers).
         laps: Number of race laps (>= 1).
-        noise_std: Standard deviation of Gaussian lap-time noise.
+        noise_std: Baseline standard deviation of Gaussian lap-time noise.
+            Each driver's effective noise_std is ``noise_std * driver.consistency``.
             Set to 0.0 for fully deterministic behaviour.
         seed: Random seed for reproducibility.  ``None`` uses
             entropy from the OS.
@@ -115,63 +129,67 @@ def simulate_race(
         A ``RaceResult`` containing classification, DNF list, and lap times.
 
     Raises:
-        ValueError: If laps < 1 or cars is empty.
+        ValueError: If laps < 1 or teams is empty.
     """
     if laps < 1:
         raise ValueError("laps must be >= 1.")
-    if not cars:
-        raise ValueError("cars list must not be empty.")
+    if not teams:
+        raise ValueError("teams list must not be empty.")
 
     rng: Generator = np.random.default_rng(seed)
 
-    # -- Initialise per-car state using Phase 2 strategy search ---------------
-    states: list[_CarState] = []
-    for car in cars:
-        best = find_best_constant_deploy(track, car, laps)
+    # -- Initialise per-driver state using Phase 2 strategy search ------------
+    states: list[_DriverState] = []
+    for team in teams:
+        best = find_best_constant_deploy(track, team.car, laps)
         strat = best["best_strategy"]
-        states.append(
-            _CarState(
-                car=car,
-                deploy_level=strat.deploy_level,
-                harvest_level=strat.harvest_level,
+        for driver in team.drivers:
+            states.append(
+                _DriverState(
+                    driver=driver,
+                    car=team.car,
+                    deploy_level=strat.deploy_level,
+                    harvest_level=strat.harvest_level,
+                )
             )
-        )
 
     # -- Lap loop -------------------------------------------------------------
     for _ in range(laps):
-        for cs in states:
-            if not cs.active:
+        for ds in states:
+            if not ds.active:
                 continue
 
             # 1. Harvest
-            harvest_amount: float = track.energy_harvest_factor * cs.harvest_level
-            cs.energy.harvest(harvest_amount)
+            harvest_amount: float = track.energy_harvest_factor * ds.harvest_level
+            ds.energy.harvest(harvest_amount)
 
             # 2. Deploy
-            actual_deploy: float = cs.energy.deploy(cs.deploy_level)
+            actual_deploy: float = ds.energy.deploy(ds.deploy_level)
 
-            # 3. Deterministic lap time
+            # 3. Deterministic lap time + driver skill offset
             t: float = compute_lap_time(
-                track, cs.car, float(cs.tyre.age), actual_deploy
+                track, ds.car, float(ds.tyre.age), actual_deploy
             )
+            t += ds.driver.skill_offset
 
-            # 4. Gaussian noise
+            # 4. Gaussian noise scaled by driver consistency
             if noise_std > 0.0:
-                t += float(rng.normal(0.0, noise_std))
+                effective_std: float = noise_std * ds.driver.consistency
+                t += float(rng.normal(0.0, effective_std))
 
-            cs.last_lap_time = t
-            cs.cumulative_time += t
-            cs.lap_times.append(t)
+            ds.last_lap_time = t
+            ds.cumulative_time += t
+            ds.lap_times.append(t)
 
-            # 5. Reliability hazard
-            hazard: float = 1.0 - math.exp(-(1.0 - cs.car.reliability))
+            # 5. Reliability hazard (car-based)
+            hazard: float = 1.0 - math.exp(-(1.0 - ds.car.reliability))
             if rng.random() < hazard:
-                cs.active = False
+                ds.active = False
 
             # 6. Tyre age
-            cs.tyre.increment_age()
+            ds.tyre.increment_age()
 
-        # -- Sort active cars by cumulative time ------------------------------
+        # -- Sort active drivers by cumulative time ---------------------------
         active_states = [s for s in states if s.active]
         active_states.sort(key=lambda s: s.cumulative_time)
 
@@ -184,13 +202,11 @@ def simulate_race(
     )
     dnf_sorted = [s for s in states if not s.active]
 
-    classification: list[str] = [s.car.team_name for s in active_sorted] + [
-        s.car.team_name for s in dnf_sorted
+    classification: list[str] = [s.driver.name for s in active_sorted] + [
+        s.driver.name for s in dnf_sorted
     ]
-    dnf_names: list[str] = [s.car.team_name for s in dnf_sorted]
-    lap_time_map: dict[str, list[float]] = {
-        s.car.team_name: s.lap_times for s in states
-    }
+    dnf_names: list[str] = [s.driver.name for s in dnf_sorted]
+    lap_time_map: dict[str, list[float]] = {s.driver.name: s.lap_times for s in states}
 
     return RaceResult(
         final_classification=classification,
@@ -205,7 +221,7 @@ def simulate_race(
 
 
 def _apply_overtakes(
-    ranked: list[_CarState],
+    ranked: list[_DriverState],
     track: Track,
     rng: Generator,
 ) -> None:

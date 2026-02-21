@@ -6,6 +6,10 @@ differences) and for quantifying the overall unpredictability of a
 championship (Shannon entropy of WDC probability distributions).
 
 All Monte Carlo calls are fully seeded for reproducibility.
+
+Phase 10 operates on teams (with two drivers each).  Sensitivity functions
+perturb the *car* attached to a target team and evaluate the WDC probability
+of a specified driver from that team.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ from dataclasses import replace
 
 from f1_engine.core.car import Car
 from f1_engine.core.season import simulate_season_monte_carlo
+from f1_engine.core.team import Team
 from f1_engine.core.track import Track
 
 # ---------------------------------------------------------------------------
@@ -24,8 +29,9 @@ from f1_engine.core.track import Track
 
 def compute_reliability_sensitivity(
     calendar: list[Track],
-    car: Car,
-    other_cars: list[Car],
+    team: Team,
+    other_teams: list[Team],
+    driver_name: str,
     laps_per_race: int,
     seasons: int,
     delta: float = 0.01,
@@ -38,15 +44,16 @@ def compute_reliability_sensitivity(
         sensitivity = (WDC_plus - WDC_minus) / (2 * delta)
 
     where ``WDC_plus`` and ``WDC_minus`` are the WDC probabilities for
-    *car* when its reliability is perturbed by ``+delta`` and ``-delta``
-    respectively.
+    *driver_name* when the team car's reliability is perturbed by ``+delta``
+    and ``-delta`` respectively.
 
     The perturbed reliability values are clamped to ``[0.0, 1.0]``.
 
     Args:
         calendar: Season calendar (list of tracks).
-        car: The car whose reliability is being perturbed.
-        other_cars: All other cars in the field (unchanged).
+        team: The team whose car reliability is being perturbed.
+        other_teams: All other teams in the field (unchanged).
+        driver_name: The driver whose WDC probability is evaluated.
         laps_per_race: Laps per race.
         seasons: Monte Carlo replications.
         delta: Perturbation magnitude.
@@ -55,24 +62,27 @@ def compute_reliability_sensitivity(
     Returns:
         Central-difference elasticity estimate (float).
     """
-    rel_plus: float = min(1.0, car.reliability + delta)
-    rel_minus: float = max(0.0, car.reliability - delta)
+    rel_plus: float = min(1.0, team.car.reliability + delta)
+    rel_minus: float = max(0.0, team.car.reliability - delta)
 
-    car_plus: Car = replace(car, reliability=rel_plus)
-    car_minus: Car = replace(car, reliability=rel_minus)
+    car_plus: Car = replace(team.car, reliability=rel_plus)
+    car_minus: Car = replace(team.car, reliability=rel_minus)
 
-    cars_plus: list[Car] = [car_plus] + list(other_cars)
-    cars_minus: list[Car] = [car_minus] + list(other_cars)
+    team_plus: Team = Team(name=team.name, car=car_plus, drivers=team.drivers)
+    team_minus: Team = Team(name=team.name, car=car_minus, drivers=team.drivers)
+
+    teams_plus: list[Team] = [team_plus] + list(other_teams)
+    teams_minus: list[Team] = [team_minus] + list(other_teams)
 
     result_plus = simulate_season_monte_carlo(
-        calendar, cars_plus, laps_per_race, seasons, base_seed=base_seed
+        calendar, teams_plus, laps_per_race, seasons, base_seed=base_seed
     )
     result_minus = simulate_season_monte_carlo(
-        calendar, cars_minus, laps_per_race, seasons, base_seed=base_seed
+        calendar, teams_minus, laps_per_race, seasons, base_seed=base_seed
     )
 
-    wdc_plus: float = result_plus["wdc_probabilities"].get(car.team_name, 0.0)
-    wdc_minus: float = result_minus["wdc_probabilities"].get(car.team_name, 0.0)
+    wdc_plus: float = result_plus["wdc_probabilities"].get(driver_name, 0.0)
+    wdc_minus: float = result_minus["wdc_probabilities"].get(driver_name, 0.0)
 
     actual_delta: float = rel_plus - rel_minus
     if actual_delta == 0.0:
@@ -88,8 +98,9 @@ def compute_reliability_sensitivity(
 
 def compute_ers_sensitivity(
     calendar: list[Track],
-    car: Car,
-    other_cars: list[Car],
+    team: Team,
+    other_teams: list[Team],
+    driver_name: str,
     laps_per_race: int,
     seasons: int,
     delta: float = 0.01,
@@ -102,15 +113,16 @@ def compute_ers_sensitivity(
         sensitivity = (WDC_plus - WDC_minus) / (2 * delta)
 
     where ``WDC_plus`` and ``WDC_minus`` are the WDC probabilities for
-    *car* when its ``ers_efficiency`` is perturbed by ``+delta`` and
-    ``-delta`` respectively.
+    *driver_name* when the team car's ``ers_efficiency`` is perturbed by
+    ``+delta`` and ``-delta`` respectively.
 
     The perturbed ERS efficiency values are clamped to ``[0.0, 1.0]``.
 
     Args:
         calendar: Season calendar (list of tracks).
-        car: The car whose ERS efficiency is being perturbed.
-        other_cars: All other cars in the field (unchanged).
+        team: The team whose car ERS efficiency is being perturbed.
+        other_teams: All other teams in the field (unchanged).
+        driver_name: The driver whose WDC probability is evaluated.
         laps_per_race: Laps per race.
         seasons: Monte Carlo replications.
         delta: Perturbation magnitude.
@@ -119,24 +131,27 @@ def compute_ers_sensitivity(
     Returns:
         Central-difference elasticity estimate (float).
     """
-    ers_plus: float = min(1.0, car.ers_efficiency + delta)
-    ers_minus: float = max(0.0, car.ers_efficiency - delta)
+    ers_plus: float = min(1.0, team.car.ers_efficiency + delta)
+    ers_minus: float = max(0.0, team.car.ers_efficiency - delta)
 
-    car_plus: Car = replace(car, ers_efficiency=ers_plus)
-    car_minus: Car = replace(car, ers_efficiency=ers_minus)
+    car_plus: Car = replace(team.car, ers_efficiency=ers_plus)
+    car_minus: Car = replace(team.car, ers_efficiency=ers_minus)
 
-    cars_plus: list[Car] = [car_plus] + list(other_cars)
-    cars_minus: list[Car] = [car_minus] + list(other_cars)
+    team_plus: Team = Team(name=team.name, car=car_plus, drivers=team.drivers)
+    team_minus: Team = Team(name=team.name, car=car_minus, drivers=team.drivers)
+
+    teams_plus: list[Team] = [team_plus] + list(other_teams)
+    teams_minus: list[Team] = [team_minus] + list(other_teams)
 
     result_plus = simulate_season_monte_carlo(
-        calendar, cars_plus, laps_per_race, seasons, base_seed=base_seed
+        calendar, teams_plus, laps_per_race, seasons, base_seed=base_seed
     )
     result_minus = simulate_season_monte_carlo(
-        calendar, cars_minus, laps_per_race, seasons, base_seed=base_seed
+        calendar, teams_minus, laps_per_race, seasons, base_seed=base_seed
     )
 
-    wdc_plus: float = result_plus["wdc_probabilities"].get(car.team_name, 0.0)
-    wdc_minus: float = result_minus["wdc_probabilities"].get(car.team_name, 0.0)
+    wdc_plus: float = result_plus["wdc_probabilities"].get(driver_name, 0.0)
+    wdc_minus: float = result_minus["wdc_probabilities"].get(driver_name, 0.0)
 
     actual_delta: float = ers_plus - ers_minus
     if actual_delta == 0.0:

@@ -49,6 +49,8 @@ f1_engine/
         season.py        -- Full-season Monte Carlo championship simulator (Phase 5).
         updating.py      -- Latent performance updating engine (Phase 6).
         sensitivity.py   -- Sensitivity and volatility analysis engine (Phase 7).
+        driver.py        -- Driver frozen dataclass (Phase 10).
+        team.py          -- Team model pairing a Car with two Drivers (Phase 10).
 
     data_ingestion/
         __init__.py      -- Data ingestion package.
@@ -67,6 +69,7 @@ tests/
     test_sensitivity.py  -- Sensitivity and volatility analysis tests (Phase 7).
     test_fastf1_loader.py -- Data ingestion and calibration tests (Phase 8).
     test_calendar.py     -- Calendar loading and track validation tests (Phase 9).
+    test_team_driver.py  -- Driver and team modelling tests (Phase 10).
 
 scripts/
     calibrate_from_testing.py -- CLI script to calibrate from real sessions (Phase 8).
@@ -422,6 +425,56 @@ When all races share identical parameters championship outcomes are driven almos
 3. A ``ValueError`` is raised immediately if any entry fails validation.
 
 Downstream consumers (``main.py``, ``scripts/run_weekly_pipeline.py``) receive fully constructed, immutable ``Track`` dataclass instances with no further parsing required.
+
+---
+
+## Phase 10 -- Driver-Level Modelling and Constructor Championship
+
+Phase 10 introduces individual driver modelling and separates the World Drivers' Championship (WDC) from the World Constructors' Championship (WCC).
+
+### Driver Model
+
+``Driver`` is a frozen dataclass with four fields:
+
+| Field           | Type    | Description                                          |
+|-----------------|---------|------------------------------------------------------|
+| ``name``        | ``str`` | Unique driver identifier.                            |
+| ``team_name``   | ``str`` | Must match the parent ``Team.name``.                 |
+| ``skill_offset``| ``float``| Added to every lap time (lower is faster).          |
+| ``consistency`` | ``float``| Multiplier on lap-time noise (> 0; 1.0 = baseline).|
+
+### Team Model
+
+``Team`` pairs a ``Car`` with exactly two ``Driver`` instances.  Validation enforces:
+
+1. Exactly two drivers per team.
+2. Each driver's ``team_name`` matches the team ``name``.
+3. Team ``name`` is non-empty.
+
+The car defines shared mechanical performance (base speed, ERS, aero, reliability).  Drivers add individual variation through ``skill_offset`` and ``consistency``.
+
+### Race-Level Changes
+
+``simulate_race`` now accepts ``teams: list[Team]`` instead of ``cars: list[Car]``.  Each driver maintains independent ``EnergyState`` and ``TyreState``.  Lap time for a driver is:
+
+```
+lap_time = physics_lap_time(car, track, ...) + driver.skill_offset + noise
+```
+
+where ``noise ~ N(0, noise_std * driver.consistency)``.  Reliability failures remain car-based: the hazard rate derives from ``car.reliability``, applied independently to each driver.
+
+### Championship Separation
+
+The season simulator now returns two distinct probability distributions:
+
+- **WDC probabilities** -- keyed by driver name; each driver accumulates individual race points.
+- **WCC probabilities** -- keyed by team name; constructor points equal the sum of both drivers' race points.
+
+Sensitivity functions perturb the car attached to a target team and evaluate the WDC probability of a specified driver from that team.
+
+### Why Two Drivers Matter
+
+With a single entity per team the championship is entirely determined by car performance.  Adding a second driver with distinct skill and consistency parameters introduces intra-team competition, making WDC outcomes more volatile than WCC outcomes.  This matches real-world behaviour where constructor standings tend to be more stable than driver standings across a season.
 
 ---
 

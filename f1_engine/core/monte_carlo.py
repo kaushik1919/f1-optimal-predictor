@@ -10,8 +10,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from f1_engine.core.car import Car
 from f1_engine.core.race import simulate_race
+from f1_engine.core.team import Team
 from f1_engine.core.track import Track
 
 # Standard F1 points for positions 1-10.
@@ -20,7 +20,7 @@ _POINTS_TABLE: list[int] = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
 
 def simulate_race_monte_carlo(
     track: Track,
-    cars: list[Car],
+    teams: list[Team],
     laps: int,
     simulations: int,
     base_seed: int = 42,
@@ -31,7 +31,7 @@ def simulate_race_monte_carlo(
       - Results are fully reproducible given the same ``base_seed``.
       - No global random state is modified.
 
-    Collected statistics per team:
+    Collected statistics per driver:
       - **Winner probability** -- fraction of simulations won.
       - **Podium probability** -- fraction of simulations finishing in the
         top 3.
@@ -43,7 +43,7 @@ def simulate_race_monte_carlo(
 
     Args:
         track: Circuit to simulate.
-        cars: List of participating cars.
+        teams: List of participating teams (each with 2 drivers).
         laps: Race length in laps (>= 1).
         simulations: Number of Monte Carlo replications (>= 1).
         base_seed: Starting seed value.  Replication *i* uses
@@ -51,11 +51,11 @@ def simulate_race_monte_carlo(
 
     Returns:
         Dictionary with keys:
-            winner_probabilities  -- ``{team_name: float}``
-            podium_probabilities  -- ``{team_name: float}``
-            expected_position     -- ``{team_name: float}``
-            expected_points       -- ``{team_name: float}``
-            finish_distribution   -- ``{team_name: {position: float}}``
+            winner_probabilities  -- ``{driver_name: float}``
+            podium_probabilities  -- ``{driver_name: float}``
+            expected_position     -- ``{driver_name: float}``
+            expected_points       -- ``{driver_name: float}``
+            finish_distribution   -- ``{driver_name: {position: float}}``
 
     Raises:
         ValueError: If simulations < 1.
@@ -63,7 +63,7 @@ def simulate_race_monte_carlo(
     if simulations < 1:
         raise ValueError("simulations must be >= 1.")
 
-    team_names: list[str] = [c.team_name for c in cars]
+    driver_names: list[str] = [drv.name for team in teams for drv in team.drivers]
 
     # Accumulators
     win_counts: dict[str, int] = defaultdict(int)
@@ -71,12 +71,12 @@ def simulate_race_monte_carlo(
     position_sums: dict[str, int] = defaultdict(int)
     points_sums: dict[str, float] = defaultdict(float)
     position_counts: dict[str, dict[int, int]] = {
-        name: defaultdict(int) for name in team_names
+        name: defaultdict(int) for name in driver_names
     }
 
     for i in range(simulations):
         seed: int = base_seed + i
-        result = simulate_race(track, cars, laps, seed=seed)
+        result = simulate_race(track, teams, laps, seed=seed)
 
         classification: list[str] = result.final_classification
         for pos_idx, name in enumerate(classification):
@@ -104,19 +104,19 @@ def simulate_race_monte_carlo(
     inv: float = 1.0 / simulations
 
     winner_probabilities: dict[str, float] = {
-        name: win_counts[name] * inv for name in team_names
+        name: win_counts[name] * inv for name in driver_names
     }
     podium_probabilities: dict[str, float] = {
-        name: podium_counts[name] * inv for name in team_names
+        name: podium_counts[name] * inv for name in driver_names
     }
     expected_position: dict[str, float] = {
-        name: position_sums[name] * inv for name in team_names
+        name: position_sums[name] * inv for name in driver_names
     }
     expected_points: dict[str, float] = {
-        name: points_sums[name] * inv for name in team_names
+        name: points_sums[name] * inv for name in driver_names
     }
     finish_distribution: dict[str, dict[int, float]] = {}
-    for name in team_names:
+    for name in driver_names:
         finish_distribution[name] = {
             pos: count * inv for pos, count in sorted(position_counts[name].items())
         }

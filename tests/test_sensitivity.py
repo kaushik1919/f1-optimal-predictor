@@ -1,13 +1,19 @@
-"""Tests for Phase 7: sensitivity and volatility analysis engine."""
+"""Tests for Phase 7/10: sensitivity and volatility analysis engine.
+
+Phase 10 refactors sensitivity functions to operate on Team objects and
+evaluate a specific driver's WDC probability.
+"""
 
 import math
 
 from f1_engine.core.car import Car
+from f1_engine.core.driver import Driver
 from f1_engine.core.sensitivity import (
     compute_championship_entropy,
     compute_ers_sensitivity,
     compute_reliability_sensitivity,
 )
+from f1_engine.core.team import Team
 from f1_engine.core.track import Track
 
 # ---------------------------------------------------------------------------
@@ -21,7 +27,7 @@ def _mini_calendar() -> list[Track]:
         overtake_coefficient=0.5,
         energy_harvest_factor=0.7,
         tyre_degradation_factor=0.05,
-        downforce_sensitivity=2.0,
+        downforce_sensitivity=0.50,
     )
     return [
         Track(name="Track_A", **base),
@@ -29,25 +35,39 @@ def _mini_calendar() -> list[Track]:
     ]
 
 
-def _target_car() -> Car:
-    return Car(
-        team_name="TargetTeam",
-        base_speed=80.0,
-        ers_efficiency=0.80,
-        aero_efficiency=0.85,
+def _make_team(
+    name: str,
+    base_speed: float = 80.0,
+    ers_efficiency: float = 0.80,
+    aero_efficiency: float = 0.85,
+    reliability: float = 0.95,
+) -> Team:
+    car = Car(
+        team_name=name,
+        base_speed=base_speed,
+        ers_efficiency=ers_efficiency,
+        aero_efficiency=aero_efficiency,
         tyre_wear_rate=1.0,
-        reliability=0.95,
+        reliability=reliability,
     )
+    drivers = [
+        Driver(name=f"{name} D1", team_name=name, skill_offset=0.0, consistency=1.0),
+        Driver(name=f"{name} D2", team_name=name, skill_offset=0.1, consistency=1.0),
+    ]
+    return Team(name=name, car=car, drivers=drivers)
 
 
-def _other_cars() -> list[Car]:
+def _target_team() -> Team:
+    return _make_team("TargetTeam")
+
+
+def _other_teams() -> list[Team]:
     return [
-        Car(
-            team_name=f"Rival_{i}",
+        _make_team(
+            f"Rival_{i}",
             base_speed=80.5 + i * 0.2,
             ers_efficiency=0.78,
             aero_efficiency=0.84,
-            tyre_wear_rate=1.0,
             reliability=0.94,
         )
         for i in range(3)
@@ -87,18 +107,19 @@ def test_entropy_maximum_for_uniform() -> None:
 
 
 def test_sensitivity_sign_reasonable() -> None:
-    """Reliability sensitivity for a competitive car should be >= 0.
+    """Reliability sensitivity for a competitive driver should be >= 0.
 
     Increasing reliability should not decrease WDC probability, so the
     central-difference estimate should be non-negative (within noise).
     """
     calendar = _mini_calendar()
-    car = _target_car()
-    others = _other_cars()
+    team = _target_team()
+    others = _other_teams()
     sens = compute_reliability_sensitivity(
         calendar,
-        car,
+        team,
         others,
+        driver_name=team.drivers[0].name,
         laps_per_race=5,
         seasons=6,
         delta=0.02,
@@ -112,12 +133,13 @@ def test_sensitivity_sign_reasonable() -> None:
 def test_ers_sensitivity_runs() -> None:
     """ERS sensitivity should return a finite float without errors."""
     calendar = _mini_calendar()
-    car = _target_car()
-    others = _other_cars()
+    team = _target_team()
+    others = _other_teams()
     sens = compute_ers_sensitivity(
         calendar,
-        car,
+        team,
         others,
+        driver_name=team.drivers[0].name,
         laps_per_race=5,
         seasons=6,
         delta=0.02,
@@ -129,12 +151,13 @@ def test_ers_sensitivity_runs() -> None:
 def test_zero_delta_returns_zero() -> None:
     """When delta is 0, the denominator collapses; function should return 0."""
     calendar = _mini_calendar()
-    car = _target_car()
-    others = _other_cars()
+    team = _target_team()
+    others = _other_teams()
     sens = compute_reliability_sensitivity(
         calendar,
-        car,
+        team,
         others,
+        driver_name=team.drivers[0].name,
         laps_per_race=5,
         seasons=4,
         delta=0.0,
