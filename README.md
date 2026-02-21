@@ -48,6 +48,7 @@ f1_engine/
         monte_carlo.py   -- Monte Carlo race analytics engine (Phase 4).
         season.py        -- Full-season Monte Carlo championship simulator (Phase 5).
         updating.py      -- Latent performance updating engine (Phase 6).
+        sensitivity.py   -- Sensitivity and volatility analysis engine (Phase 7).
 
 data/
     calendar_2026.yaml   -- 2026 season race calendar.
@@ -59,6 +60,7 @@ tests/
     test_monte_carlo.py  -- Monte Carlo analytics tests (Phase 4).
     test_season.py       -- Season championship simulator tests (Phase 5).
     test_updating.py     -- Performance updating engine tests (Phase 6).
+    test_sensitivity.py  -- Sensitivity and volatility analysis tests (Phase 7).
 
 main.py                  -- CLI entrypoint.
 ```
@@ -282,6 +284,55 @@ The `learning_rate` parameter (default `0.05`) controls how aggressively the mod
 ### Integration
 
 `apply_updated_state(car, state)` produces a new `Car` instance with the updated latent parameters while preserving non-performance attributes (`team_name`, `aero_efficiency`, `tyre_wear_rate`).  Because `Car` is a frozen dataclass, no mutation occurs.
+
+---
+
+## Phase 7 Scope
+
+Phase 7 adds a sensitivity and volatility analysis engine that quantifies how championship outcomes respond to small parameter perturbations and how unpredictable the title race is overall.
+
+### Elasticity Approximation
+
+Parameter sensitivity is estimated using a central-difference numerical derivative.  For a given parameter (reliability or ERS efficiency):
+
+1. The parameter is increased by ``+delta``.
+2. The parameter is decreased by ``-delta``.
+3. A full season Monte Carlo simulation is run for each perturbed configuration.
+4. The WDC probability for the target car is extracted from both runs.
+5. The elasticity is computed as::
+
+```
+sensitivity = (WDC_plus - WDC_minus) / (2 * delta)
+```
+
+Perturbed values are clamped to valid ranges (``[0.0, 1.0]`` for both reliability and ERS efficiency).  If the effective delta collapses to zero (e.g. parameter already at a boundary), the function returns ``0.0``.
+
+### Central Difference Method
+
+The central-difference scheme is preferred over forward or backward differences because it achieves second-order accuracy -- the truncation error is proportional to ``delta^2`` rather than ``delta``.  This yields more stable elasticity estimates with the same computational budget (two season simulations per parameter).
+
+### Entropy as Volatility Measure
+
+`compute_championship_entropy(wdc_probabilities)` computes the Shannon entropy of the WDC probability distribution::
+
+```
+H = -sum(p * log(p))   for all p > 0
+```
+
+Entropy provides a single scalar summary of championship unpredictability:
+
+- **H = 0** -- one team is certain to win; no volatility.
+- **H = log(n)** -- all *n* teams are equally likely to win; maximum volatility.
+
+Entropy is measured in nats (natural logarithm).  Zero-probability entries are skipped by convention (``0 * log(0) = 0``).
+
+### Available Functions
+
+- `compute_reliability_sensitivity(calendar, car, other_cars, ...)` -- elasticity of WDC probability with respect to reliability.
+- `compute_ers_sensitivity(calendar, car, other_cars, ...)` -- elasticity of WDC probability with respect to ERS efficiency.
+- `compute_championship_entropy(wdc_probabilities)` -- Shannon entropy of the championship distribution.
+
+All Monte Carlo calls use seeded randomness for full reproducibility.
 
 ---
 
