@@ -44,6 +44,7 @@ f1_engine/
         tyre.py          -- Tyre wear state model (Phase 2).
         strategy.py      -- Constant strategy dataclass (Phase 2).
         stint.py         -- Stint simulation and strategy search (Phase 2).
+        race.py          -- Multi-car stochastic race simulator (Phase 3).
 
 data/
     calendar_2026.yaml   -- 2026 season race calendar.
@@ -51,6 +52,7 @@ data/
 tests/
     test_physics.py      -- Core physics test suite.
     test_stint.py        -- Energy, tyre, stint, and strategy tests (Phase 2).
+    test_race.py         -- Race simulator tests (Phase 3).
 
 main.py                  -- CLI entrypoint.
 ```
@@ -114,6 +116,51 @@ Returns a dictionary containing `total_time`, `lap_times`, `energy_trace`, and `
 ### Constant Strategy Search
 
 `find_best_constant_deploy(track, car, laps)` evaluates deploy levels `[0.0, 0.2, 0.4, 0.6, 0.8]` with harvest fixed at `1.0` and returns the strategy yielding the lowest total stint time.
+
+---
+
+## Phase 3 Scope
+
+Phase 3 introduces a multi-car stochastic race simulator built on top of the deterministic core from Phases 1 and 2. All randomness is seeded and reproducible.
+
+### Stochastic Lap Time Model
+
+Each lap time begins with the deterministic value from the Phase 1 physics model. A Gaussian noise term is then added:
+
+```
+observed_lap_time = deterministic_lap_time + N(0, noise_std)
+```
+
+Setting `noise_std = 0.0` recovers fully deterministic behaviour. The random generator is created per call via `numpy.random.default_rng(seed)`, ensuring no global state is modified.
+
+### Reliability Hazard Model
+
+Each lap, every active car faces a probability of mechanical retirement (DNF). The hazard rate per lap is derived from the car's reliability attribute:
+
+```
+hazard = 1 - exp(-(1 - car.reliability))
+```
+
+A car with `reliability = 1.0` has zero hazard. Lower reliability values produce progressively higher per-lap retirement probabilities.
+
+### Overtake Logistic Model
+
+After each lap, adjacent cars in the running order are evaluated for position swaps. An overtake is attempted when the cumulative time gap is less than 1.0 second. The pass probability follows a logistic function:
+
+```
+delta = trailing_last_lap - leading_last_lap
+pass_prob = 1 / (1 + exp(-3.0 * delta * track.overtake_coefficient))
+```
+
+This means a trailing car that posted a faster lap than the leader is more likely to complete the overtake, modulated by the circuit's overtaking difficulty.
+
+### Race Output
+
+`simulate_race` returns a `RaceResult` dataclass containing:
+
+- `final_classification` -- all team names ordered by finishing position (DNFs appended).
+- `dnf_list` -- team names that retired.
+- `lap_times` -- per-car list of recorded lap times.
 
 ---
 

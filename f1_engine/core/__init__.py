@@ -3,6 +3,7 @@
 from f1_engine.core.car import Car
 from f1_engine.core.energy import EnergyState
 from f1_engine.core.physics import lap_time
+from f1_engine.core.race import RaceResult, simulate_race
 from f1_engine.core.stint import find_best_constant_deploy, simulate_stint
 from f1_engine.core.strategy import Strategy
 from f1_engine.core.track import Track
@@ -11,10 +12,12 @@ from f1_engine.core.tyre import TyreState
 __all__ = [
     "Car",
     "EnergyState",
+    "RaceResult",
     "Strategy",
     "Track",
     "TyreState",
     "find_best_constant_deploy",
     "lap_time",
+    "simulate_race",
     "simulate_stint",
 ]
