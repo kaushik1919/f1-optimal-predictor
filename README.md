@@ -50,6 +50,10 @@ f1_engine/
         updating.py      -- Latent performance updating engine (Phase 6).
         sensitivity.py   -- Sensitivity and volatility analysis engine (Phase 7).
 
+    data_ingestion/
+        __init__.py      -- Data ingestion package.
+        fastf1_loader.py -- FastF1 session loader and parameter calibration (Phase 8).
+
 data/
     calendar_2026.yaml   -- 2026 season race calendar.
 
@@ -61,6 +65,14 @@ tests/
     test_season.py       -- Season championship simulator tests (Phase 5).
     test_updating.py     -- Performance updating engine tests (Phase 6).
     test_sensitivity.py  -- Sensitivity and volatility analysis tests (Phase 7).
+    test_fastf1_loader.py -- Data ingestion and calibration tests (Phase 8).
+
+scripts/
+    calibrate_from_testing.py -- CLI script to calibrate from real sessions (Phase 8).
+    run_weekly_pipeline.py   -- Automated weekly calibration and simulation (Phase 8).
+
+results/
+    calibrated_parameters.json -- Output of calibration script (gitignored).
 
 main.py                  -- CLI entrypoint.
 ```
@@ -336,6 +348,46 @@ All Monte Carlo calls use seeded randomness for full reproducibility.
 
 ---
 
+## Phase 8 Scope
+
+Phase 8 adds external data ingestion using the FastF1 library to calibrate car parameters from real-world Formula 1 testing or race sessions.
+
+### Data Source
+
+The engine uses [FastF1](https://theoehrly.github.io/Fast-F1/) (``fastf1>=3.0.0``) to download official timing data from the FIA.  Session data is cached locally in ``fastf1_cache/`` after the first download, so subsequent runs do not require internet access.
+
+``load_session_data(year, event, session)`` loads any available session (practice, qualifying, race, or pre-season testing) and returns a ``pandas.DataFrame`` of lap records.
+
+### Parameter Estimation
+
+``estimate_team_parameters(laps_df)`` processes the lap data and produces per-team parameter estimates:
+
+- **base_speed** -- the arithmetic mean of valid lap times in seconds.  This maps directly to ``Car.base_speed`` (lower is faster).
+- **reliability** -- computed as ``1 - (retirements / total_laps)`` where a retirement is approximated by any lap with a missing ``LapTime``.  Clamped to ``[0.0, 1.0]``.
+- **ers_efficiency** -- a proxy computed as the inverse of lap-time standard deviation.  Teams with lower variance are assumed to manage ERS deployment more effectively.  Clamped to ``[0.0, 1.0]``.
+
+The output is a nested dictionary ``{team_name: {"base_speed": ..., "reliability": ..., "ers_efficiency": ...}}``.
+
+### Calibration Script
+
+``scripts/calibrate_from_testing.py`` automatically detects the latest season and most recent completed race:
+
+1. The current year is tried first (``datetime.now().year``).
+2. If no events are found, the previous year is used as a fallback.
+3. The latest event whose ``EventDate <= today`` is selected.
+4. Estimate parameters for every team.
+5. Print a structured summary.
+6. Write results to ``results/calibrated_parameters.json``.
+
+### Limitations
+
+- **Proxy quality** -- ERS efficiency is approximated via lap-time consistency, not direct energy telemetry.  True ERS calibration would require power-unit data not available through FastF1.
+- **Retirement detection** -- Missing lap times are used as a retirement signal, but they can also indicate pit stops or deleted laps.  More sophisticated filtering (e.g. excluding in-laps and out-laps) would improve accuracy.
+- **Session specificity** -- Parameters estimated from a single session may not generalise.  Averaging across multiple sessions or weighting by recency is recommended for production use.
+- **Network dependency** -- The first load of any session requires internet access.  Subsequent runs use the local cache.
+
+---
+
 ## How to Run Locally
 
 ### Prerequisites
@@ -398,6 +450,44 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and 
 6. Run `pytest -v` for the test suite.
 
 Any failure in linting, formatting, or tests will fail the pipeline.
+
+---
+
+## Automated Weekly Calibration
+
+The engine includes a fully automated weekly pipeline that keeps simulation parameters aligned with the latest real-world performance data.
+
+### How It Works
+
+1. **Data ingestion** -- The ``scripts/run_weekly_pipeline.py`` script uses FastF1 to download lap data from the most recently completed Formula 1 race.  Season and event detection is automatic: the current year is tried first, falling back to the previous year if no events are available.
+2. **Parameter estimation** -- Per-team ``base_speed``, ``reliability``, and ``ers_efficiency`` values are computed from the observed lap data and saved to ``results/calibrated_parameters.json``.
+3. **Season simulation** -- A 500-season Monte Carlo championship simulation is executed using the 2026 calendar and the freshly calibrated car parameters.  Results (WDC probabilities, expected points, expected positions) are saved to ``results/latest_weekly_simulation.json``.
+4. **Auto-commit** -- If the results differ from the previous run, the GitHub Action commits and pushes the updated files.
+
+### GitHub Action
+
+The workflow is defined in ``.github/workflows/weekly_calibration.yml``:
+
+- **Scheduled trigger** -- runs every Monday at 03:00 UTC.
+- **Manual trigger** -- can be dispatched on demand via ``workflow_dispatch``.
+- **Environment** -- ``PYTHONUNBUFFERED: 1`` ensures real-time log output.
+- **No secrets required** -- the workflow uses only public FastF1 data and the default ``GITHUB_TOKEN``.
+
+### How Results Update Automatically
+
+After each pipeline run, the workflow stages the ``results/`` directory and checks for differences.  If any calibrated parameters or simulation outputs have changed, a commit is created with the message ``"Weekly auto-calibration update"`` and pushed to ``main``.  If nothing changed, the push step is skipped.
+
+This means the ``results/`` directory in the repository always reflects the latest available calibration, updated weekly without manual intervention.
+
+### Running Locally
+
+To execute the pipeline manually:
+
+```bash
+python scripts/run_weekly_pipeline.py
+```
+
+Internet access is required on the first run to download session data.  Subsequent runs use the local FastF1 cache.
 
 ---
 

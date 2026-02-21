@@ -15,3 +15,5 @@ venv/
 htmlcov/
 .coverage
 *.log
+fastf1_cache/
+results/
