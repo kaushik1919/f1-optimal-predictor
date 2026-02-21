@@ -1,26 +1,207 @@
 # Formula 1 2026 Season Calendar
+# Each track is parameterised with a five-element vector:
+#   straight_ratio          -- proportion of lap on straights (0-1)
+#   overtake_coefficient    -- ease of overtaking (0-1)
+#   energy_harvest_factor   -- ERS recovery potential (0-1)
+#   tyre_degradation_factor -- circuit tyre wear severity (0-1)
+#   downforce_sensitivity   -- downforce impact on lap time (0-1)
+#
+# Archetype key:
+#   H  = High-speed          (Monza, Spa, Jeddah, Las Vegas)
+#   S  = Street circuit       (Monaco, Singapore, Baku)
+#   D  = High degradation     (Bahrain, Barcelona, COTA, Qatar)
+#   T  = Technical / high-df  (Suzuka, Hungary, Zandvoort, Imola)
+#   B  = Balanced             (Silverstone, Melbourne, Abu Dhabi)
+
 races:
+  # R01 -- Australian Grand Prix (Melbourne, Albert Park)  [B]
   - name: "Australian Grand Prix"
+    straight_ratio: 0.55
+    overtake_coefficient: 0.50
+    energy_harvest_factor: 0.60
+    tyre_degradation_factor: 0.50
+    downforce_sensitivity: 0.55
+
+  # R02 -- Chinese Grand Prix (Shanghai)  [B]
   - name: "Chinese Grand Prix"
+    straight_ratio: 0.55
+    overtake_coefficient: 0.55
+    energy_harvest_factor: 0.65
+    tyre_degradation_factor: 0.55
+    downforce_sensitivity: 0.60
+
+  # R03 -- Japanese Grand Prix (Suzuka)  [T]
   - name: "Japanese Grand Prix"
+    straight_ratio: 0.40
+    overtake_coefficient: 0.35
+    energy_harvest_factor: 0.55
+    tyre_degradation_factor: 0.60
+    downforce_sensitivity: 0.80
+
+  # R04 -- Bahrain Grand Prix (Sakhir)  [D]
   - name: "Bahrain Grand Prix"
+    straight_ratio: 0.55
+    overtake_coefficient: 0.65
+    energy_harvest_factor: 0.70
+    tyre_degradation_factor: 0.75
+    downforce_sensitivity: 0.50
+
+  # R05 -- Saudi Arabian Grand Prix (Jeddah)  [H]
   - name: "Saudi Arabian Grand Prix"
+    straight_ratio: 0.70
+    overtake_coefficient: 0.45
+    energy_harvest_factor: 0.60
+    tyre_degradation_factor: 0.45
+    downforce_sensitivity: 0.40
+
+  # R06 -- Miami Grand Prix  [B]
   - name: "Miami Grand Prix"
+    straight_ratio: 0.55
+    overtake_coefficient: 0.50
+    energy_harvest_factor: 0.60
+    tyre_degradation_factor: 0.55
+    downforce_sensitivity: 0.55
+
+  # R07 -- Emilia Romagna Grand Prix (Imola)  [T]
   - name: "Emilia Romagna Grand Prix"
+    straight_ratio: 0.40
+    overtake_coefficient: 0.30
+    energy_harvest_factor: 0.50
+    tyre_degradation_factor: 0.55
+    downforce_sensitivity: 0.70
+
+  # R08 -- Monaco Grand Prix  [S]
   - name: "Monaco Grand Prix"
+    straight_ratio: 0.20
+    overtake_coefficient: 0.10
+    energy_harvest_factor: 0.35
+    tyre_degradation_factor: 0.40
+    downforce_sensitivity: 0.90
+
+  # R09 -- Spanish Grand Prix (Barcelona)  [D]
   - name: "Spanish Grand Prix"
+    straight_ratio: 0.50
+    overtake_coefficient: 0.40
+    energy_harvest_factor: 0.55
+    tyre_degradation_factor: 0.70
+    downforce_sensitivity: 0.65
+
+  # R10 -- Canadian Grand Prix (Montreal)  [B]
   - name: "Canadian Grand Prix"
+    straight_ratio: 0.60
+    overtake_coefficient: 0.60
+    energy_harvest_factor: 0.70
+    tyre_degradation_factor: 0.50
+    downforce_sensitivity: 0.40
+
+  # R11 -- Austrian Grand Prix (Red Bull Ring)  [H]
   - name: "Austrian Grand Prix"
+    straight_ratio: 0.65
+    overtake_coefficient: 0.60
+    energy_harvest_factor: 0.65
+    tyre_degradation_factor: 0.55
+    downforce_sensitivity: 0.45
+
+  # R12 -- British Grand Prix (Silverstone)  [B]
   - name: "British Grand Prix"
+    straight_ratio: 0.55
+    overtake_coefficient: 0.50
+    energy_harvest_factor: 0.60
+    tyre_degradation_factor: 0.65
+    downforce_sensitivity: 0.70
+
+  # R13 -- Belgian Grand Prix (Spa-Francorchamps)  [H]
   - name: "Belgian Grand Prix"
+    straight_ratio: 0.65
+    overtake_coefficient: 0.55
+    energy_harvest_factor: 0.70
+    tyre_degradation_factor: 0.55
+    downforce_sensitivity: 0.60
+
+  # R14 -- Hungarian Grand Prix (Hungaroring)  [T]
   - name: "Hungarian Grand Prix"
+    straight_ratio: 0.30
+    overtake_coefficient: 0.20
+    energy_harvest_factor: 0.45
+    tyre_degradation_factor: 0.65
+    downforce_sensitivity: 0.85
+
+  # R15 -- Dutch Grand Prix (Zandvoort)  [T]
   - name: "Dutch Grand Prix"
+    straight_ratio: 0.35
+    overtake_coefficient: 0.25
+    energy_harvest_factor: 0.50
+    tyre_degradation_factor: 0.60
+    downforce_sensitivity: 0.80
+
+  # R16 -- Italian Grand Prix (Monza)  [H]
   - name: "Italian Grand Prix"
+    straight_ratio: 0.80
+    overtake_coefficient: 0.70
+    energy_harvest_factor: 0.80
+    tyre_degradation_factor: 0.45
+    downforce_sensitivity: 0.25
+
+  # R17 -- Azerbaijan Grand Prix (Baku)  [S]
   - name: "Azerbaijan Grand Prix"
+    straight_ratio: 0.65
+    overtake_coefficient: 0.55
+    energy_harvest_factor: 0.65
+    tyre_degradation_factor: 0.50
+    downforce_sensitivity: 0.45
+
+  # R18 -- Singapore Grand Prix (Marina Bay)  [S]
   - name: "Singapore Grand Prix"
+    straight_ratio: 0.30
+    overtake_coefficient: 0.25
+    energy_harvest_factor: 0.40
+    tyre_degradation_factor: 0.60
+    downforce_sensitivity: 0.85
+
+  # R19 -- United States Grand Prix (COTA)  [D]
   - name: "United States Grand Prix"
+    straight_ratio: 0.50
+    overtake_coefficient: 0.55
+    energy_harvest_factor: 0.60
+    tyre_degradation_factor: 0.70
+    downforce_sensitivity: 0.60
+
+  # R20 -- Mexico City Grand Prix (Hermanos Rodriguez)  [B]
   - name: "Mexico City Grand Prix"
+    straight_ratio: 0.55
+    overtake_coefficient: 0.50
+    energy_harvest_factor: 0.55
+    tyre_degradation_factor: 0.65
+    downforce_sensitivity: 0.55
+
+  # R21 -- Brazilian Grand Prix (Interlagos)  [B]
   - name: "Brazilian Grand Prix"
+    straight_ratio: 0.55
+    overtake_coefficient: 0.60
+    energy_harvest_factor: 0.65
+    tyre_degradation_factor: 0.55
+    downforce_sensitivity: 0.55
+
+  # R22 -- Las Vegas Grand Prix  [H]
   - name: "Las Vegas Grand Prix"
+    straight_ratio: 0.70
+    overtake_coefficient: 0.50
+    energy_harvest_factor: 0.60
+    tyre_degradation_factor: 0.45
+    downforce_sensitivity: 0.35
+
+  # R23 -- Qatar Grand Prix (Lusail)  [D]
   - name: "Qatar Grand Prix"
+    straight_ratio: 0.60
+    overtake_coefficient: 0.45
+    energy_harvest_factor: 0.60
+    tyre_degradation_factor: 0.70
+    downforce_sensitivity: 0.55
+
+  # R24 -- Abu Dhabi Grand Prix (Yas Marina)  [B]
   - name: "Abu Dhabi Grand Prix"
+    straight_ratio: 0.55
+    overtake_coefficient: 0.50
+    energy_harvest_factor: 0.60
+    tyre_degradation_factor: 0.50
+    downforce_sensitivity: 0.60

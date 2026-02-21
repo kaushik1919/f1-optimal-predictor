@@ -55,7 +55,7 @@ f1_engine/
         fastf1_loader.py -- FastF1 session loader and parameter calibration (Phase 8).
 
 data/
-    calendar_2026.yaml   -- 2026 season race calendar.
+    calendar_2026.yaml   -- 2026 season race calendar (full per-track parameterisation).
 
 tests/
     test_physics.py      -- Core physics test suite.
@@ -66,6 +66,7 @@ tests/
     test_updating.py     -- Performance updating engine tests (Phase 6).
     test_sensitivity.py  -- Sensitivity and volatility analysis tests (Phase 7).
     test_fastf1_loader.py -- Data ingestion and calibration tests (Phase 8).
+    test_calendar.py     -- Calendar loading and track validation tests (Phase 9).
 
 scripts/
     calibrate_from_testing.py -- CLI script to calibrate from real sessions (Phase 8).
@@ -385,6 +386,42 @@ The output is a nested dictionary ``{team_name: {"base_speed": ..., "reliability
 - **Retirement detection** -- Missing lap times are used as a retirement signal, but they can also indicate pit stops or deleted laps.  More sophisticated filtering (e.g. excluding in-laps and out-laps) would improve accuracy.
 - **Session specificity** -- Parameters estimated from a single session may not generalise.  Averaging across multiple sessions or weighting by recency is recommended for production use.
 - **Network dependency** -- The first load of any session requires internet access.  Subsequent runs use the local cache.
+
+---
+
+## Phase 9 -- Track Environment Modelling
+
+Every circuit on the 2026 calendar is now described by a five-element numerical vector stored in ``data/calendar_2026.yaml``:
+
+| Parameter                | What it captures                              | Range   |
+|--------------------------|-----------------------------------------------|---------|
+| ``straight_ratio``       | Proportion of the lap spent on full-throttle straights | [0, 1] |
+| ``overtake_coefficient`` | Ease of completing an overtake                | [0, 1] |
+| ``energy_harvest_factor``| ERS energy recovery potential per lap         | [0, 1] |
+| ``tyre_degradation_factor`` | Circuit-specific tyre wear severity        | [0, 1] |
+| ``downforce_sensitivity``| Impact of downforce level on lap time         | [0, 1] |
+
+Tracks are grouped into five archetypes:
+
+- **H -- High-speed** (Monza, Spa, Jeddah, Austrian, Las Vegas) -- dominant straights, high harvest, low downforce demand.
+- **S -- Street circuit** (Monaco, Baku, Singapore) -- tight corners, very low overtaking probability, high downforce requirement.
+- **D -- High degradation** (Bahrain, Barcelona, COTA, Qatar) -- abrasive surfaces or demanding layouts that punish tyre management.
+- **T -- Technical / high-downforce** (Suzuka, Imola, Hungary, Zandvoort) -- complex corner sequences rewarding aerodynamic efficiency.
+- **B -- Balanced** (Melbourne, Shanghai, Miami, Montreal, Silverstone, Mexico City, Interlagos, Abu Dhabi) -- moderate values across all five parameters.
+
+### Why heterogeneous tracks matter
+
+When all races share identical parameters championship outcomes are driven almost entirely by car performance.  Introducing per-track variation makes the simulator sensitive to car-track interactions: a high-ERS-efficiency car gains disproportionately at harvest-rich circuits, while a low-wear-rate car is rewarded at high-degradation venues.  This increases championship volatility and produces more realistic probability distributions.
+
+### Loader changes
+
+``f1_engine/config.py`` now returns ``list[Track]`` instead of ``list[dict]``.  Each YAML entry is validated on load:
+
+1. All six fields (name plus five numeric parameters) must be present.
+2. Every numeric parameter must lie in the closed interval [0, 1].
+3. A ``ValueError`` is raised immediately if any entry fails validation.
+
+Downstream consumers (``main.py``, ``scripts/run_weekly_pipeline.py``) receive fully constructed, immutable ``Track`` dataclass instances with no further parsing required.
 
 ---
 

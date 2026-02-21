@@ -8,7 +8,6 @@ from f1_engine import __version__
 from f1_engine.config import load_calendar
 from f1_engine.core.car import Car
 from f1_engine.core.physics import lap_time
-from f1_engine.core.track import Track
 
 
 def main() -> None:
@@ -20,17 +19,10 @@ def main() -> None:
     calendar = load_calendar()
     print(f"\n2026 Calendar: {len(calendar)} races loaded")
     for i, race in enumerate(calendar, start=1):
-        print(f"  R{i:02d}: {race['name']}")
+        print(f"  R{i:02d}: {race.name}")
 
-    # -- Sample track and car -------------------------------------------------
-    track = Track(
-        name="Bahrain International Circuit",
-        straight_ratio=0.55,
-        overtake_coefficient=0.65,
-        energy_harvest_factor=0.70,
-        tyre_degradation_factor=0.06,
-        downforce_sensitivity=2.5,
-    )
+    # -- Use the Bahrain track from the calendar ------------------------------
+    track = next(t for t in calendar if "Bahrain" in t.name)
 
     car = Car(
         team_name="Scuderia Example",
@@ -42,6 +34,13 @@ def main() -> None:
     )
 
     print(f"\nTrack : {track.name}")
+    print(
+        f"  straight_ratio={track.straight_ratio}  "
+        f"overtake={track.overtake_coefficient}  "
+        f"harvest={track.energy_harvest_factor}  "
+        f"degradation={track.tyre_degradation_factor}  "
+        f"downforce={track.downforce_sensitivity}"
+    )
     print(f"Car   : {car.team_name}")
     print("-" * 56)
 
